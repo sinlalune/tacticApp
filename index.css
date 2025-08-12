@@ -1,0 +1,22 @@
+.control-panel {
+  isolation: isolate;
+  z-index: 100 !important;
+  position: relative;
+}
+
+.player-label-wrapper {
+  pointer-events: none !important;
+  z-index: 0 !important;
+  transform: translateZ(0);
+}
+
+.player-label-wrapper > div {
+  transform: translateZ(0);
+  z-index: 0 !important;
+}
+
+/* Create stacking context for Three.js canvas */
+canvas {
+  position: relative;
+  z-index: 1;
+}

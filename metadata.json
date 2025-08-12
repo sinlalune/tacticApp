@@ -1,0 +1,5 @@
+{
+  "name": "3D Soccer Tactic Board",
+  "description": "An interactive 3D soccer pitch to visualize team formations, player roles, and strategies. Users can drag and drop players, assign roles and numbers, change team colors, and view passing networks. The scene is fully navigable with mouse controls.",
+  "requestFramePermissions": []
+}
