@@ -36,5 +36,6 @@ export interface TeamOptions {
   showCoveredArea: boolean;
   coveredAreaPlayerIds: string[];
   showPlayerNames: boolean;
+  showPlayerRoles: boolean;
   showPlayerNumbers: boolean;
 }

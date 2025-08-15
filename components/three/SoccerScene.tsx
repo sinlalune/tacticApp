@@ -2,11 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Vector3, Plane, Vector2 } from 'three';
-import type { Player, TeamOptions } from '../types';
-import Field from './Field';
-import Player3D from './Player3D';
-import PassingNet from './PassingNet';
-import CoveredArea from './CoveredArea';
+import type { Player, TeamOptions } from '../../types';
+import Field from './Field.tsx';
+import Player3D from './Player3D.tsx';
+import PassingNet from './PassingNet.tsx';
+import CoveredArea from './CoveredArea.tsx';
 
 // --- Main Scene ---
 interface SoccerSceneProps {
@@ -86,24 +86,26 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
       {/* Scene Components */}
       <Field onPointerMissed={() => onSelectPlayer(null)} />
       
-      {teamAPlayers.map(player => (
+    {teamAPlayers.map(player => (
         <Player3D 
           key={player.id} 
           player={player} 
           color={teamAOptions.color} 
           isSelected={player.id === selectedPlayerId} 
-          showPlayerNames={teamAOptions.showPlayerNames}
+      showPlayerNames={teamAOptions.showPlayerNames}
+      showPlayerRoles={teamAOptions.showPlayerRoles}
           showPlayerNumbers={teamAOptions.showPlayerNumbers}
           onPointerDown={onPlayerPointerDown}
         />
       ))}
-      {teamBPlayers.map(player => (
+    {teamBPlayers.map(player => (
         <Player3D 
           key={player.id} 
           player={player} 
           color={teamBOptions.color} 
           isSelected={player.id === selectedPlayerId} 
-          showPlayerNames={teamBOptions.showPlayerNames}
+      showPlayerNames={teamBOptions.showPlayerNames}
+      showPlayerRoles={teamBOptions.showPlayerRoles}
           showPlayerNumbers={teamBOptions.showPlayerNumbers}
           onPointerDown={onPlayerPointerDown}
         />
