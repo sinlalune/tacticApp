@@ -9,7 +9,7 @@
 // - useState : pour gérer l'état local (valeurs qui changent au fil du temps)
 // - useMemo : pour optimiser les calculs et éviter les recalculs inutiles
 // - useCallback : pour optimiser les fonctions et éviter de les recréer à chaque rendu
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 
 // On importe le type Vector3 depuis la librairie three.js.
 // TypeScript permet d'importer uniquement le type (mot-clé 'type') pour le typage des données 3D.
@@ -123,6 +123,33 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   const teamAPlayers = useMemo(() => players.filter(p => p.teamId === 'A'), [players]);
   const teamBPlayers = useMemo(() => players.filter(p => p.teamId === 'B'), [players]);
 
+  // État du panneau actif (barre des tâches mince)
+  const [activePanel, setActivePanel] = useState<null | 'controls' | 'teamA' | 'teamB' | 'player'>(null);
+  // Position horizontale du popover alignée sur le bouton cliqué
+  const [popoverLeft, setPopoverLeft] = useState<number>(0);
+  const barContainerRef = useRef<HTMLDivElement | null>(null);
+  const controlsBtnRef = useRef<HTMLButtonElement | null>(null);
+  const teamABtnRef = useRef<HTMLButtonElement | null>(null);
+  const teamBBtnRef = useRef<HTMLButtonElement | null>(null);
+  const playerBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  const togglePanel = (panel: 'controls' | 'teamA' | 'teamB' | 'player', btn: HTMLButtonElement | null) => {
+    if (activePanel === panel) {
+      setActivePanel(null);
+      return;
+    }
+    // Calcule la position gauche du bouton relativement à la barre
+    if (btn && barContainerRef.current) {
+      const btnRect = btn.getBoundingClientRect();
+      const contRect = barContainerRef.current.getBoundingClientRect();
+      const left = Math.max(0, btnRect.left - contRect.left);
+      setPopoverLeft(left);
+    } else {
+      setPopoverLeft(0);
+    }
+    setActivePanel(panel);
+  };
+
   // Gestion des changements sur les champs du joueur sélectionné (nom, numéro, rôle)
   // Cette fonction est appelée à chaque modification d'un champ du formulaire d'édition.
   const handlePlayerChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -147,97 +174,156 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   // - Les options d'équipe (couleur, visualisations)
   // - L'édition du joueur sélectionné
   return (
-    <div className="control-panel absolute top-0 right-0 h-full w-full max-w-sm bg-gray-900 bg-opacity-80 backdrop-blur-sm text-white p-4 overflow-y-auto shadow-2xl font-sans" style={{ isolation: 'isolate', zIndex: 100 }}>
-      {/* Titre du panneau */}
-      <h1 className="text-2xl font-bold text-center mb-4 border-b border-gray-600 pb-2">Tactic Board</h1>
-      {/* Instructions et contrôles globaux */}
-      <div className="bg-gray-800 rounded-lg p-3 mb-4">
-        <h3 className="font-semibold mb-2">Controls</h3>
-        {/* Liste des instructions d'utilisation */}
-        <p className="text-sm text-gray-400 flex items-center"><InfoIcon /> Mouse: Left-click to rotate, Right-click to pan, Scroll to zoom.</p>
-        <p className="text-sm text-gray-400 flex items-center"><InfoIcon /> Drag players on the field to move them.</p>
-        <p className="text-sm text-gray-400 flex items-center"><InfoIcon /> Press Space to toggle navigation lock.</p>
-        {/* Contrôle du verrouillage navigation */}
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700">
-          <label htmlFor="lockNav" className="text-sm font-medium text-gray-300">Lock Navigation <span className="text-xs text-gray-500">(Space)</span></label>
-          <input type="checkbox" id="lockNav" checked={isNavLocked} onChange={(e) => onSetNavLock(e.target.checked)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500"/>
+    <div
+      className="control-panel absolute bottom-0 left-0 w-full bg-gray-900/90 backdrop-blur-sm text-white border-t border-gray-700 shadow-2xl font-sans"
+      style={{ isolation: 'isolate', zIndex: 100 }}
+    >
+      <div className="relative" ref={barContainerRef}>
+        {/* Panneau déroulant affiché au-dessus de la barre lorsqu'un onglet est actif */}
+        {activePanel && (
+          <div className="absolute pb-2" style={{ left: popoverLeft, bottom: 'calc(100% + 8px)' }}>
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-xl w-auto max-w-[560px] inline-block align-bottom">
+            {activePanel === 'controls' && (
+              <div>
+                <h3 className="font-semibold mb-2">Controls</h3>
+                <p className="text-sm text-gray-400 flex items-center"><InfoIcon /> Mouse: Left-click to rotate, Right-click to pan, Scroll to zoom.</p>
+                <p className="text-sm text-gray-400 flex items-center"><InfoIcon /> Drag players on the field to move them.</p>
+                <p className="text-sm text-gray-400 flex items-center"><InfoIcon /> Press Space to toggle navigation lock.</p>
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700">
+                  <label htmlFor="lockNav" className="text-sm font-medium text-gray-300">Lock Navigation <span className="text-xs text-gray-500">(Space)</span></label>
+                  <input type="checkbox" id="lockNav" checked={isNavLocked} onChange={(e) => onSetNavLock(e.target.checked)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500"/>
+                </div>
+              </div>
+            )}
+            {activePanel === 'teamA' && (
+              <div>
+                <h2 className="text-lg font-semibold mb-3">Team A</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <label htmlFor={`teamAColor`} className="text-sm font-medium text-gray-300">Color</label>
+                  <input type="color" id={`teamAColor`} name="color" value={teamAOptions.color} onChange={(e) => handleTeamChange('A', e)} className="w-8 h-8 p-0 border-none rounded bg-transparent" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label htmlFor={`teamAPassingNet`} className="text-sm font-medium text-gray-300">Show Passing Net</label>
+                  <input type="checkbox" id={`teamAPassingNet`} name="showPassingNet" checked={teamAOptions.showPassingNet} onChange={(e) => handleTeamChange('A', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                </div>
+                {teamAOptions.showPassingNet && (
+                  <PlayerSelectionList players={teamAPlayers} selectedIds={teamAOptions.passingNetPlayerIds} onTogglePlayer={(pid) => onTogglePlayerSelection('A', 'passingNet', pid)} />
+                )}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700">
+                  <label htmlFor={`teamACoveredArea`} className="text-sm font-medium text-gray-300">Show Covered Area</label>
+                  <input type="checkbox" id={`teamACoveredArea`} name="showCoveredArea" checked={teamAOptions.showCoveredArea} onChange={(e) => handleTeamChange('A', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                </div>
+                {teamAOptions.showCoveredArea && (
+                  <PlayerSelectionList players={teamAPlayers} selectedIds={teamAOptions.coveredAreaPlayerIds} onTogglePlayer={(pid) => onTogglePlayerSelection('A', 'coveredArea', pid)} />
+                )}
+                <div className="mt-3 pt-3 border-t border-gray-700">
+                  <h3 className="text-sm font-semibold text-gray-300 mb-2">Player Labels</h3>
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor={`teamANames`} className="text-sm font-medium text-gray-300">Show Names & Roles</label>
+                    <input type="checkbox" id={`teamANames`} name="showPlayerNames" checked={teamAOptions.showPlayerNames} onChange={(e) => handleTeamChange('A', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor={`teamANumbers`} className="text-sm font-medium text-gray-300">Show Numbers</label>
+                    <input type="checkbox" id={`teamANumbers`} name="showPlayerNumbers" checked={teamAOptions.showPlayerNumbers} onChange={(e) => handleTeamChange('A', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                  </div>
+                </div>
+              </div>
+            )}
+            {activePanel === 'teamB' && (
+              <div>
+                <h2 className="text-lg font-semibold mb-3">Team B</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <label htmlFor={`teamBColor`} className="text-sm font-medium text-gray-300">Color</label>
+                  <input type="color" id={`teamBColor`} name="color" value={teamBOptions.color} onChange={(e) => handleTeamChange('B', e)} className="w-8 h-8 p-0 border-none rounded bg-transparent" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <label htmlFor={`teamBPassingNet`} className="text-sm font-medium text-gray-300">Show Passing Net</label>
+                  <input type="checkbox" id={`teamBPassingNet`} name="showPassingNet" checked={teamBOptions.showPassingNet} onChange={(e) => handleTeamChange('B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                </div>
+                {teamBOptions.showPassingNet && (
+                  <PlayerSelectionList players={teamBPlayers} selectedIds={teamBOptions.passingNetPlayerIds} onTogglePlayer={(pid) => onTogglePlayerSelection('B', 'passingNet', pid)} />
+                )}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700">
+                  <label htmlFor={`teamBCoveredArea`} className="text-sm font-medium text-gray-300">Show Covered Area</label>
+                  <input type="checkbox" id={`teamBCoveredArea`} name="showCoveredArea" checked={teamBOptions.showCoveredArea} onChange={(e) => handleTeamChange('B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                </div>
+                {teamBOptions.showCoveredArea && (
+                  <PlayerSelectionList players={teamBPlayers} selectedIds={teamBOptions.coveredAreaPlayerIds} onTogglePlayer={(pid) => onTogglePlayerSelection('B', 'coveredArea', pid)} />
+                )}
+                <div className="mt-3 pt-3 border-t border-gray-700">
+                  <h3 className="text-sm font-semibold text-gray-300 mb-2">Player Labels</h3>
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor={`teamBNames`} className="text-sm font-medium text-gray-300">Show Names & Roles</label>
+                    <input type="checkbox" id={`teamBNames`} name="showPlayerNames" checked={teamBOptions.showPlayerNames} onChange={(e) => handleTeamChange('B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor={`teamBNumbers`} className="text-sm font-medium text-gray-300">Show Numbers</label>
+                    <input type="checkbox" id={`teamBNumbers`} name="showPlayerNumbers" checked={teamBOptions.showPlayerNumbers} onChange={(e) => handleTeamChange('B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
+                  </div>
+                </div>
+              </div>
+            )}
+            {activePanel === 'player' && (
+              <div>
+                <h2 className="text-lg font-semibold mb-3">Edit Player</h2>
+                {selectedPlayer ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                      <input type="text" id="name" name="name" value={selectedPlayer.name} onChange={handlePlayerChange} className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                    <div>
+                      <label htmlFor="number" className="block text-sm font-medium text-gray-300 mb-1">Number</label>
+                      <input type="number" id="number" name="number" value={selectedPlayer.number} onChange={handlePlayerChange} className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                    </div>
+                    <div>
+                      <label htmlFor="role" className="block text-sm font-medium text-gray-300 mb-1">Role</label>
+                      <select id="role" name="role" value={selectedPlayer.role} onChange={handlePlayerChange} className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        {PLAYER_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-gray-400">Select a player on the field to edit their details.</div>
+                )}
+              </div>
+            )}
+            </div>
+          </div>
+        )}
+
+        {/* Barre des tâches (mince) */}
+        <div className="flex items-center gap-2 px-3 py-2">
+          <button
+            ref={controlsBtnRef}
+            className={`px-3 py-1 rounded-md text-sm border border-gray-700 hover:bg-gray-800 ${activePanel === 'controls' ? 'bg-indigo-600 border-indigo-500' : 'bg-gray-900/60'}`}
+            onClick={() => togglePanel('controls', controlsBtnRef.current)}
+          >
+            Controls
+          </button>
+          <button
+            ref={teamABtnRef}
+            className={`px-3 py-1 rounded-md text-sm border border-gray-700 hover:bg-gray-800 ${activePanel === 'teamA' ? 'bg-indigo-600 border-indigo-500' : 'bg-gray-900/60'}`}
+            onClick={() => togglePanel('teamA', teamABtnRef.current)}
+          >
+            Team A
+          </button>
+          <button
+            ref={teamBBtnRef}
+            className={`px-3 py-1 rounded-md text-sm border border-gray-700 hover:bg-gray-800 ${activePanel === 'teamB' ? 'bg-indigo-600 border-indigo-500' : 'bg-gray-900/60'}`}
+            onClick={() => togglePanel('teamB', teamBBtnRef.current)}
+          >
+            Team B
+          </button>
+          <button
+            ref={playerBtnRef}
+            className={`px-3 py-1 rounded-md text-sm border border-gray-700 hover:bg-gray-800 ${activePanel === 'player' ? 'bg-indigo-600 border-indigo-500' : 'bg-gray-900/60'}`}
+            onClick={() => togglePanel('player', playerBtnRef.current)}
+          >
+            Edit Player
+          </button>
         </div>
       </div>
-      {/* Contrôles d'équipe et édition de joueur suivent... */}
-      {/* On affiche les contrôles pour chaque équipe (A et B) */}
-      {[
-        { id: 'A', name: 'Team A', options: teamAOptions, players: teamAPlayers, theme: 'blue' },
-        { id: 'B', name: 'Team B', options: teamBOptions, players: teamBPlayers, theme: 'red' }
-      ].map(team => (
-        <div key={team.id} className="mb-6 p-4 bg-gray-800 rounded-lg">
-          <h2 className="text-lg font-semibold mb-3">{team.name}</h2>
-          {/* Color Picker : permet de choisir la couleur de l'équipe */}
-          <div className="flex items-center justify-between mb-3">
-            <label htmlFor={`team${team.id}Color`} className="text-sm font-medium text-gray-300">Color</label>
-            <input type="color" id={`team${team.id}Color`} name="color" value={team.options.color} onChange={(e) => handleTeamChange(team.id as 'A' | 'B', e)} className="w-8 h-8 p-0 border-none rounded bg-transparent" />
-          </div>
-          {/* Passing Net : affichage du réseau de passes */}
-          <div className="flex items-center justify-between">
-            <label htmlFor={`team${team.id}PassingNet`} className="text-sm font-medium text-gray-300">Show Passing Net</label>
-            <input type="checkbox" id={`team${team.id}PassingNet`} name="showPassingNet" checked={team.options.showPassingNet} onChange={(e) => handleTeamChange(team.id as 'A' | 'B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
-          </div>
-          {/* Si le réseau de passes est activé, on affiche la sélection des joueurs */}
-          {team.options.showPassingNet && (
-            <PlayerSelectionList players={team.players} selectedIds={team.options.passingNetPlayerIds} onTogglePlayer={(pid) => onTogglePlayerSelection(team.id as 'A' | 'B', 'passingNet', pid)} />
-          )}
-          {/* Covered Area : affichage de la zone de couverture */}
-          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700">
-            <label htmlFor={`team${team.id}CoveredArea`} className="text-sm font-medium text-gray-300">Show Covered Area</label>
-            <input type="checkbox" id={`team${team.id}CoveredArea`} name="showCoveredArea" checked={team.options.showCoveredArea} onChange={(e) => handleTeamChange(team.id as 'A' | 'B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
-          </div>
-          {/* Si la zone de couverture est activée, on affiche la sélection des joueurs */}
-          {team.options.showCoveredArea && (
-            <PlayerSelectionList players={team.players} selectedIds={team.options.coveredAreaPlayerIds} onTogglePlayer={(pid) => onTogglePlayerSelection(team.id as 'A' | 'B', 'coveredArea', pid)} />
-          )}
-          {/* Player Label Settings : options d'affichage des noms et numéros */}
-          <div className="mt-3 pt-3 border-t border-gray-700">
-            <h3 className="text-sm font-semibold text-gray-300 mb-2">Player Labels</h3>
-            <div className="flex items-center justify-between mb-2">
-              <label htmlFor={`team${team.id}Names`} className="text-sm font-medium text-gray-300">Show Names & Roles</label>
-              <input type="checkbox" id={`team${team.id}Names`} name="showPlayerNames" checked={team.options.showPlayerNames} onChange={(e) => handleTeamChange(team.id as 'A' | 'B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
-            </div>
-            <div className="flex items-center justify-between">
-              <label htmlFor={`team${team.id}Numbers`} className="text-sm font-medium text-gray-300">Show Numbers</label>
-              <input type="checkbox" id={`team${team.id}Numbers`} name="showPlayerNumbers" checked={team.options.showPlayerNumbers} onChange={(e) => handleTeamChange(team.id as 'A' | 'B', e)} className="form-checkbox h-5 w-5 text-indigo-500 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500" />
-            </div>
-          </div>
-        </div>
-      ))}
-      {/* Selected Player Controls : édition du joueur sélectionné */}
-      {selectedPlayer ? (
-        <div className="p-4 bg-gray-800 rounded-lg animate-fade-in">
-          <h2 className="text-lg font-semibold mb-4">Edit Player</h2>
-          <div className="space-y-4">
-            {/* Champ de saisie du nom */}
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">Name</label>
-              <input type="text" id="name" name="name" value={selectedPlayer.name} onChange={handlePlayerChange} className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
-            {/* Champ de saisie du numéro */}
-            <div>
-              <label htmlFor="number" className="block text-sm font-medium text-gray-300 mb-1">Number</label>
-              <input type="number" id="number" name="number" value={selectedPlayer.number} onChange={handlePlayerChange} className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
-            {/* Sélecteur du rôle */}
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-300 mb-1">Role</label>
-              <select id="role" name="role" value={selectedPlayer.role} onChange={handlePlayerChange} className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                {PLAYER_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
-              </select>
-            </div>
-          </div>
-        </div>
-      ) : (
-        // Si aucun joueur n'est sélectionné, on affiche une instruction.
-        <div className="p-4 bg-gray-800 rounded-lg text-center text-gray-400">
-          <p>Select a player on the field to edit their details.</p>
-        </div>
-      )}
     </div>
   );
 };
