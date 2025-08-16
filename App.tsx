@@ -26,7 +26,7 @@ import ControlPanel from './components/ControlPanel';
 // - Player : structure d'un joueur
 // - TeamOptions : options d'affichage et de visualisation pour une équipe
 // - PlayerRole : type pour le rôle d'un joueur
-import type { Player, TeamOptions } from './types';
+import type { Player, TeamOptions, Annotation, DrawingTool } from './types';
 
 // InfoIcon et PlayerSelectionList sont désormais importés depuis components/
 
@@ -63,6 +63,16 @@ export default function App() {
 
   // isNavLocked : indique si la navigation 3D est verrouillée (pour éviter les déplacements involontaires)
   const [isNavLocked, setNavLock] = useState<boolean>(false);
+
+  // Drawing annotations state
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [activeTool, setActiveTool] = useState<DrawingTool | null>(null);
+  const [drawColor, setDrawColor] = useState<string>('#f59e0b');
+  const [drawLineWidth, setDrawLineWidth] = useState<number>(2);
+  const [drawFilled, setDrawFilled] = useState<boolean>(false);
+  const [drawStrokeStyle, setDrawStrokeStyle] = useState<'solid'|'dashed'|'dotted'>('solid');
+
+  // Note: nav-lock while drawing is managed inside SoccerScene during the gesture (start/end)
 
   // Ajout d'un écouteur clavier pour la touche espace (verrouillage navigation)
   // useEffect permet d'exécuter du code lors du montage/démontage du composant.
@@ -138,6 +148,18 @@ export default function App() {
     });
   }, []);
 
+  // Drawing API
+  const addAnnotation = useCallback((ann: Annotation) => {
+    setAnnotations(prev => [...prev, ann]);
+  }, []);
+  const updateAnnotation = useCallback((id: string, patch: Partial<Annotation>) => {
+    setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...patch } as Annotation : a));
+  }, []);
+  const removeAnnotation = useCallback((id: string) => {
+    setAnnotations(prev => prev.filter(a => a.id !== id));
+  }, []);
+  const clearAnnotations = useCallback(() => setAnnotations([]), []);
+
   // Rendu principal de l'application :
   // On retourne du JSX (syntaxe proche du HTML) qui décrit l'interface.
   // - <SoccerScene> affiche la scène 3D et gère l'interaction terrain
@@ -154,6 +176,17 @@ export default function App() {
         onSelectPlayer={setSelectedPlayerId}
         onPlayerPositionUpdate={handlePlayerPositionUpdate}
         onSetNavLock={setNavLock}
+  // drawing props
+  annotations={annotations}
+  activeTool={activeTool}
+  setActiveTool={setActiveTool}
+  drawColor={drawColor}
+  drawLineWidth={drawLineWidth}
+  drawFilled={drawFilled}
+  drawStrokeStyle={drawStrokeStyle}
+  addAnnotation={addAnnotation}
+  updateAnnotation={updateAnnotation}
+  removeAnnotation={removeAnnotation}
       />
       {/* Composant du panneau de contrôle */}
       <ControlPanel
@@ -166,6 +199,18 @@ export default function App() {
         onTeamOptionChange={handleTeamOptionChange}
         onTogglePlayerSelection={handleTogglePlayerSelection}
         onSetNavLock={setNavLock}
+  // drawing props
+  activeTool={activeTool}
+  setActiveTool={setActiveTool}
+  drawColor={drawColor}
+  setDrawColor={setDrawColor}
+  drawLineWidth={drawLineWidth}
+  setDrawLineWidth={setDrawLineWidth}
+  drawFilled={drawFilled}
+  setDrawFilled={setDrawFilled}
+  drawStrokeStyle={drawStrokeStyle}
+  setDrawStrokeStyle={setDrawStrokeStyle}
+  clearAnnotations={clearAnnotations}
       />
     </main>
   );

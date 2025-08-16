@@ -22,7 +22,7 @@ const PassingNet: React.FC<PassingNetProps> = ({ players, playerIds, color }) =>
   }
 
   return (
-    <group>
+    <group renderOrder={1000}>
       {lines.map((line, index) => (
          <Line 
            key={index} 
@@ -31,9 +31,10 @@ const PassingNet: React.FC<PassingNetProps> = ({ players, playerIds, color }) =>
            dashed
            dashSize={1}
            gapSize={0.5}
-           linewidth={2}
+           lineWidth={2}
            transparent
            opacity={0.7}
+           depthTest={false}
          />
       ))}
     </group>

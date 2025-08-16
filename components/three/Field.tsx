@@ -3,7 +3,14 @@ import { Line } from '@react-three/drei';
 import { Vector3 } from 'three';
 import { FIELD_WIDTH, FIELD_LENGTH } from '../../constants';
 
-const Field: React.FC<{ onPointerMissed: (event: MouseEvent) => void }> = ({ onPointerMissed }) => {
+interface FieldProps {
+  onPointerMissed: (event: MouseEvent) => void;
+  onPointerDown?: (e: any) => void;
+  onPointerMove?: (e: any) => void;
+  onPointerUp?: (e: any) => void;
+}
+
+const Field: React.FC<FieldProps> = ({ onPointerMissed, onPointerDown, onPointerMove, onPointerUp }) => {
   const lineMaterial = { color: 'white', linewidth: 2 };
 
   const centerCircleRadius = 9.15;
@@ -24,7 +31,7 @@ const Field: React.FC<{ onPointerMissed: (event: MouseEvent) => void }> = ({ onP
   }, [centerCircleRadius]);
 
   return (
-    <group onPointerMissed={onPointerMissed}>
+    <group onPointerMissed={onPointerMissed} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[FIELD_LENGTH, FIELD_WIDTH]} />
         <meshStandardMaterial color="#228B22" />
