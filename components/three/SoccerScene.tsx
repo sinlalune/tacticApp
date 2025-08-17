@@ -94,10 +94,133 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     }
   }, [isSelecting, onSetNavLock]);
   
-  const { camera, raycaster, size, pointer } = useThree();
+  const { camera, raycaster, size, pointer, gl } = useThree();
     // Removed wasNavLocked state as it is no longer needed
   const dragPlane = useMemo(() => new Plane(new Vector3(0, 1, 0), 0), []);
   const intersection = useMemo(() => new Vector3(), []);
+  // Global drag listeners control
+  const globalDragAttachedRef = useRef<boolean>(false);
+  const computePlanePointFromClient = useCallback((ev: MouseEvent): Vector3 | null => {
+    const canvas = (gl && (gl.domElement as HTMLCanvasElement)) || (document.querySelector('canvas') as HTMLCanvasElement) || null;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    const ndc = { x, y } as any;
+    raycaster.setFromCamera(ndc, camera);
+    if (raycaster.ray.intersectPlane(dragPlane, intersection)) return intersection.clone();
+    return null;
+  }, [camera, raycaster, dragPlane, intersection, gl]);
+
+  const handleGlobalMouseMove = useCallback((ev: MouseEvent) => {
+    // Selection drag
+    if (isSelecting && selectedAnnId && selectionDragMode) {
+      const p = computePlanePointFromClient(ev);
+      if (!p) return;
+      const last = lastPointerPosRef.current;
+      if (!last) {
+        lastPointerPosRef.current = p;
+        return;
+      }
+      const delta = p.clone().sub(last);
+      lastPointerPosRef.current = p;
+      const ann = annotations.find(a => a.id === selectedAnnId);
+      if (!ann) return;
+      if (ann.type === 'arrow') {
+        const from = (ann as any).from as Vector3;
+        const to = (ann as any).to as Vector3;
+        if (selectionDragMode === 'arrow-from') {
+          updateAnnotation(ann.id, { from: new Vector3(p.x, from.y, p.z) } as any);
+        } else if (selectionDragMode === 'arrow-to') {
+          updateAnnotation(ann.id, { to: new Vector3(p.x, to.y, p.z) } as any);
+        } else if (selectionDragMode === 'move') {
+          const scaled = delta.clone().multiplyScalar(DRAG_SENSITIVITY);
+          updateAnnotation(ann.id, { from: new Vector3(from.x + scaled.x, from.y, from.z + scaled.z), to: new Vector3(to.x + scaled.x, to.y, to.z + scaled.z) } as any);
+        } else if (selectionDragMode === 'rotate') {
+          const len = ((ann as any).from as Vector3).distanceTo((ann as any).to as Vector3);
+          const newAngle = Math.atan2(p.z - from.z, p.x - from.x);
+          const newTo = new Vector3(from.x + len * Math.cos(newAngle), to.y, from.z + len * Math.sin(newAngle));
+          updateAnnotation(ann.id, { to: newTo } as any);
+        }
+      } else if (ann.type === 'circle') {
+        if (selectionDragMode === 'resize') {
+          const center = (ann as any).center as Vector3;
+          const newRadius = Math.max(0.1, p.clone().sub(center).length());
+          updateAnnotation(ann.id, { radius: newRadius } as any);
+        } else {
+          const scaled = delta.clone().multiplyScalar(DRAG_SENSITIVITY);
+          updateAnnotation(ann.id, { center: (ann as any).center.clone().add(scaled) } as any);
+        }
+      } else if (ann.type === 'rectangle' || ann.type === 'square') {
+        if (selectionDragMode === 'rotate') {
+          const start = (ann as any).start as Vector3;
+          const end = (ann as any).end as Vector3;
+          const cx = (start.x + end.x) / 2; const cz = (start.z + end.z) / 2;
+          const v = p.clone().sub(new Vector3(cx, p.y, cz));
+          const angle = Math.atan2(v.z, v.x);
+          updateAnnotation(ann.id, { rotation: angle } as any);
+        } else if (selectionDragMode === 'resize') {
+          const start = (ann as any).start as Vector3; const end = (ann as any).end as Vector3;
+          const cx = (start.x + end.x) / 2; const cz = (start.z + end.z) / 2;
+          const rot = (ann as any).rotation ?? 0;
+          const lp = p.clone().sub(new Vector3(cx, p.y, cz));
+          const cosR = Math.cos(-rot); const sinR = Math.sin(-rot);
+          const lx = lp.x * cosR - lp.z * sinR; const lz = lp.x * sinR + lp.z * cosR;
+          let halfW = Math.max(0.1, Math.abs(lx)); let halfH = Math.max(0.1, Math.abs(lz));
+          if (ann.type === 'square') { const m = Math.max(halfW, halfH); halfW = m; halfH = m; }
+          updateAnnotation(ann.id, { start: new Vector3(cx - halfW, start.y, cz - halfH), end: new Vector3(cx + halfW, end.y, cz + halfH) } as any);
+        } else {
+          const scaled = delta.clone().multiplyScalar(DRAG_SENSITIVITY);
+          updateAnnotation(ann.id, { start: (ann as any).start.clone().add(scaled), end: (ann as any).end.clone().add(scaled) } as any);
+        }
+      }
+      return;
+    }
+    // Drawing drag
+    if (drawingId) {
+      const p = computePlanePointFromClient(ev);
+      if (!p) return;
+      const ann = annotations.find(a => a.id === drawingId);
+      if (!ann) return;
+      if (ann.type === 'rectangle' || ann.type === 'square') {
+        updateAnnotation(ann.id, { end: p } as any);
+      } else if (ann.type === 'circle') {
+        updateAnnotation(ann.id, { radius: p.clone().sub((ann as any).center).length() } as any);
+      } else if (ann.type === 'arrow') {
+        updateAnnotation(ann.id, { to: new Vector3(p.x, (ann as any).from.y, p.z) } as any);
+      }
+      return;
+    }
+    // Player drag
+    if (activeDragId) {
+      const p = computePlanePointFromClient(ev);
+      if (!p) return;
+      onPlayerPositionUpdate(activeDragId, p);
+    }
+  }, [isSelecting, selectedAnnId, selectionDragMode, computePlanePointFromClient, annotations, updateAnnotation, DRAG_SENSITIVITY, drawingId, activeDragId, onPlayerPositionUpdate, gl]);
+
+  const handleGlobalMouseUp = useCallback((ev: MouseEvent) => {
+    // End all drags
+    setDrawingId(null);
+    lastPointerPosRef.current = null;
+    setSelectionDragMode(null);
+    resizeCornerRef.current = null;
+    endDrawNavLock();
+    if (didLockForPlayerDragRef.current) {
+      if (!prevNavLockBeforePlayerDragRef.current) onSetNavLock(false);
+      didLockForPlayerDragRef.current = false;
+    }
+    globalDragAttachedRef.current = false;
+    window.removeEventListener('mousemove', handleGlobalMouseMove as any);
+    window.removeEventListener('mouseup', handleGlobalMouseUp as any);
+  }, [endDrawNavLock, handleGlobalMouseMove, onSetNavLock]);
+
+  const attachGlobalDrag = useCallback(() => {
+    if (globalDragAttachedRef.current) return;
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    globalDragAttachedRef.current = true;
+  }, [handleGlobalMouseMove, handleGlobalMouseUp]);
 
   const teamAPlayers = useMemo(() => players.filter(p => p.teamId === 'A'), [players]);
   const teamBPlayers = useMemo(() => players.filter(p => p.teamId === 'B'), [players]);
@@ -135,8 +258,10 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
 
   const onPlayerPointerDown = (event: any, playerId: string) => {
     event.stopPropagation();
-  // Exit annotation selection if clicking a player while editing
-  clearSelection();
+    // If an annotation is in selection/edit mode, ignore player clicks so we don't lose selection
+    if (isSelecting) return;
+    // Exit annotation selection if clicking a player while not editing
+    clearSelection();
     // When drawing, ignore player drag/select
     if (activeTool) return;
     if (event.button !== 0) return; // only left-click starts player drag
@@ -148,6 +273,7 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
       if (!isNavLocked) onSetNavLock(true);
       didLockForPlayerDragRef.current = true;
     }
+  attachGlobalDrag();
   };
 
   const onPointerUp = () => {
@@ -280,6 +406,17 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     }
   };
 
+  // Cleanup any global listeners on unmount
+  useEffect(() => {
+    return () => {
+      if (globalDragAttachedRef.current) {
+        globalDragAttachedRef.current = false;
+        window.removeEventListener('mousemove', handleGlobalMouseMove as any);
+        window.removeEventListener('mouseup', handleGlobalMouseUp as any);
+      }
+    };
+  }, [handleGlobalMouseMove, handleGlobalMouseUp]);
+
   // Drawing interactions on the field
   const screenToPlane = (event?: any): Vector3 | null => {
     // Prefer the event's ray for precise mapping from the actual hit object
@@ -368,12 +505,15 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     if (activeTool === 'rectangle' || activeTool === 'square') {
       addAnnotation({ id, type: activeTool, color: drawColor, lineWidth: drawLineWidth, filled: drawFilled, strokeStyle: drawStrokeStyle ?? 'solid', start: p, end: p });
       setDrawingId(id);
+      attachGlobalDrag();
     } else if (activeTool === 'circle') {
       addAnnotation({ id, type: 'circle', color: drawColor, lineWidth: drawLineWidth, filled: drawFilled, strokeStyle: drawStrokeStyle ?? 'solid', center: p, radius: 0 });
       setDrawingId(id);
+      attachGlobalDrag();
     } else if (activeTool === 'arrow') {
       addAnnotation({ id, type: 'arrow', color: drawColor, lineWidth: drawLineWidth, filled: false, strokeStyle: drawStrokeStyle ?? 'solid', from: p, to: p });
       setDrawingId(id);
+      attachGlobalDrag();
     } else if (activeTool === 'erase') {
       // simple hit test to remove annotation under pointer
       const threshold = 1.0; // meters
@@ -435,18 +575,23 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     if (setActiveTool && (activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'arrow')) {
       setActiveTool(null);
     }
+    if (globalDragAttachedRef.current) {
+      globalDragAttachedRef.current = false;
+      window.removeEventListener('mousemove', handleGlobalMouseMove as any);
+      window.removeEventListener('mouseup', handleGlobalMouseUp as any);
+    }
   };
 
   const onAnnotationPointerDown = (e: any, ann: Annotation) => {
+    // Always consume clicks on annotations so they don't bubble to the field
+    e.stopPropagation();
     // If left-clicking on a different annotation while in selection mode,
     // do NOT exit selection; just swallow the event so the field doesn't clear it.
     if (e.button === 0 && isSelecting && selectedAnnId && selectedAnnId !== ann.id) {
-      e.stopPropagation();
       return;
     }
     // Right-click toggles selection mode on the shape
     if (e.button === 2) {
-      e.stopPropagation();
       if (e.nativeEvent && typeof e.nativeEvent.preventDefault === 'function') e.nativeEvent.preventDefault();
       if (!isSelecting || selectedAnnId !== ann.id) {
         // Enter selection mode on this shape
@@ -476,12 +621,12 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
       // begin drag
       const p = screenToPlane(e);
   lastPointerPosRef.current = p;
-      e.stopPropagation();
+      attachGlobalDrag();
     }
   };
   
   return (
-    <group onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
+  <group onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
       {/* Lighting Setup */}
       <ambientLight intensity={1.5} />
       <directionalLight position={[50, 50, 50]} intensity={2.5} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
@@ -544,16 +689,16 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
           return (
             <group key={a.id} onPointerDown={(e) => onAnnotationPointerDown(e, a)} position={[cx, 0, cz]} rotation={[0, -rot, 0]}>
               {a.filled && (
-                <mesh rotation={[-Math.PI/2,0,0]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
+                <mesh rotation={[-Math.PI/2,0,0]} position={[0, 0.0005, 0]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
                   <planeGeometry args={[w, h]} />
-                  <meshBasicMaterial color={a.color} transparent opacity={0.2} />
+                  <meshBasicMaterial color={a.color} transparent opacity={0.2} side={DoubleSide} depthWrite={false} />
                 </mesh>
               )}
               {/* Invisible pick plane to allow inside clicks for selection/drag when not filled */}
               {!a.filled && (
-                <mesh rotation={[-Math.PI/2,0,0]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
+                <mesh rotation={[-Math.PI/2,0,0]} position={[0, 0.0005, 0]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
                   <planeGeometry args={[w, h]} />
-                  <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+                  <meshBasicMaterial transparent opacity={0} depthWrite={false} side={DoubleSide} />
                 </mesh>
               )}
               <Line points={localPoints} color={a.color} lineWidth={a.lineWidth} dashed={dashed} dashSize={dashSize} gapSize={gapSize} />
@@ -562,13 +707,13 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
                   <Line points={selLocalPoints} color={'#ffffff'} lineWidth={1} dashed={true} dashSize={0.4} gapSize={0.4} />
                   {/* corner handles */}
                   {([[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]] as Array<[number,number]>).map(([lx,lz], idx) => (
-                    <mesh key={idx} position={[lx, y, lz]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('resize'); resizeCornerRef.current = idx; lastPointerPosRef.current = screenToPlane(e); }}>
+                    <mesh key={idx} position={[lx, y, lz]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('resize'); resizeCornerRef.current = idx; lastPointerPosRef.current = screenToPlane(e); attachGlobalDrag(); }}>
                       <sphereGeometry args={[0.6, 16, 16]} />
                       <meshBasicMaterial color={'#ffffff'} />
                     </mesh>
                   ))}
                   {/* rotate handle at top-middle */}
-                  <mesh position={[0, y, -h/2 - 2]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('rotate'); lastPointerPosRef.current = screenToPlane(e); }}>
+                  <mesh position={[0, y, -h/2 - 2]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('rotate'); lastPointerPosRef.current = screenToPlane(e); attachGlobalDrag(); }}>
                     <sphereGeometry args={[0.5, 16, 16]} />
                     <meshBasicMaterial color={'#ffcc00'} />
                   </mesh>
@@ -594,16 +739,16 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
           return (
             <group key={a.id} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
               {a.filled && (
-                <mesh rotation={[-Math.PI/2,0,0]} position={[center.x, y, center.z]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
+                <mesh rotation={[-Math.PI/2,0,0]} position={[center.x, y + 0.0005, center.z]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
                   <circleGeometry args={[radius, segments]} />
-                  <meshBasicMaterial color={a.color} transparent opacity={0.2} />
+                  <meshBasicMaterial color={a.color} transparent opacity={0.2} side={DoubleSide} depthWrite={false} />
                 </mesh>
               )}
               {/* Invisible pick disc for selection/drag when not filled */}
               {!a.filled && (
-                <mesh rotation={[-Math.PI/2,0,0]} position={[center.x, y, center.z]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
+                <mesh rotation={[-Math.PI/2,0,0]} position={[center.x, y + 0.0005, center.z]} onPointerDown={(e) => onAnnotationPointerDown(e, a)}>
                   <circleGeometry args={[Math.max(0.001, radius), segments]} />
-                  <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+                  <meshBasicMaterial transparent opacity={0} depthWrite={false} side={DoubleSide} />
                 </mesh>
               )}
               <Line points={points} color={a.color} lineWidth={a.lineWidth} dashed={dashed} dashSize={dashSize} gapSize={gapSize} />
@@ -611,12 +756,12 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
                 <>
                   <Line points={points} color={'#ffffff'} lineWidth={1} dashed={true} dashSize={0.4} gapSize={0.4} />
                   {/* move handle at center */}
-                  <mesh position={[center.x, y, center.z]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('move'); lastPointerPosRef.current = screenToPlane(e); }}>
+                  <mesh position={[center.x, y, center.z]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('move'); lastPointerPosRef.current = screenToPlane(e); attachGlobalDrag(); }}>
                     <sphereGeometry args={[0.6, 16, 16]} />
                     <meshBasicMaterial color={'#ffffff'} />
                   </mesh>
                   {/* resize handle at +X */}
-                  <mesh position={[center.x + Math.max(0.5, radius), y, center.z]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('resize'); lastPointerPosRef.current = screenToPlane(e); }}>
+                  <mesh position={[center.x + Math.max(0.5, radius), y, center.z]} onPointerDown={(e) => { e.stopPropagation(); setSelectedAnnId(a.id); setSelectionDragMode('resize'); lastPointerPosRef.current = screenToPlane(e); attachGlobalDrag(); }}>
                     <sphereGeometry args={[0.5, 16, 16]} />
                     <meshBasicMaterial color={'#ffcc00'} />
                   </mesh>
@@ -664,11 +809,12 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
             dashed={dashed}
             dashSize={dashSize}
             gapSize={gapSize}
-            onPointerDown={(e) => {
+      onPointerDown={(e) => {
               if (e.button === 0 && isSelecting && selectedAnnId === a.id) {
                 e.stopPropagation();
                 setSelectionDragMode('move');
-                lastPointerPosRef.current = screenToPlane(e);
+        lastPointerPosRef.current = screenToPlane(e);
+        attachGlobalDrag();
               }
             }}
           />
@@ -678,11 +824,12 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
       {/* Arrow Head */}
       <mesh
         position={[len, y + 0.0005, 0]}
-        onPointerDown={(e) => {
+    onPointerDown={(e) => {
           if (e.button === 0 && isSelecting && selectedAnnId === a.id) {
             e.stopPropagation();
             setSelectionDragMode('arrow-to');
-            lastPointerPosRef.current = screenToPlane(e);
+      lastPointerPosRef.current = screenToPlane(e);
+      attachGlobalDrag();
           }
         }}
       >
@@ -695,15 +842,15 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
       {/* Selection Handles */}
       {selectedAnnId === a.id && (
         <>
-          <mesh position={[0, y, 0]} onPointerDown={(e) => { e.stopPropagation(); setSelectionDragMode('arrow-from'); lastPointerPosRef.current = screenToPlane(e); }}>
+          <mesh position={[0, y, 0]} onPointerDown={(e) => { e.stopPropagation(); setSelectionDragMode('arrow-from'); lastPointerPosRef.current = screenToPlane(e); attachGlobalDrag(); }}>
             <sphereGeometry args={[0.6, 16, 16]} />
             <meshBasicMaterial color={'#ffffff'} />
           </mesh>
-          <mesh position={[len, y, 0]} onPointerDown={(e) => { e.stopPropagation(); setSelectionDragMode('arrow-to'); lastPointerPosRef.current = screenToPlane(e); }}>
+          <mesh position={[len, y, 0]} onPointerDown={(e) => { e.stopPropagation(); setSelectionDragMode('arrow-to'); lastPointerPosRef.current = screenToPlane(e); attachGlobalDrag(); }}>
             <sphereGeometry args={[0.6, 16, 16]} />
             <meshBasicMaterial color={'#ffffff'} />
           </mesh>
-          <mesh position={[len / 2, y, 2]} onPointerDown={(e) => { e.stopPropagation(); setSelectionDragMode('rotate'); lastPointerPosRef.current = screenToPlane(e); }}>
+          <mesh position={[len / 2, y, 2]} onPointerDown={(e) => { e.stopPropagation(); setSelectionDragMode('rotate'); lastPointerPosRef.current = screenToPlane(e); attachGlobalDrag(); }}>
             <sphereGeometry args={[0.5, 16, 16]} />
             <meshBasicMaterial color={'#ffcc00'} />
           </mesh>
