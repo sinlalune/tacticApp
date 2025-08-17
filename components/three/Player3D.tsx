@@ -24,7 +24,7 @@ const Player3D: React.FC<PlayerProps> = ({ player, color, isSelected, showPlayer
       position={player.position}
       onPointerDown={(e) => onPointerDown(e, player.id)}
     >
-      <mesh castShadow>
+  <mesh castShadow position={[0, playerHeight / 2, 0]}>
         <cylinderGeometry args={[0.5, 0.5, playerHeight, 16]} />
         <meshStandardMaterial 
           color={color}

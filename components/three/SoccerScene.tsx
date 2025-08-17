@@ -849,7 +849,27 @@ export const SoccerScene: React.FC<SoccerSceneProps> = () => {
       <Canvas shadows camera={{ position: [0, 80, 100], fov: 50 }}>
         <color attach="background" args={['#111827']} />
   <SoccerSceneContent />
-        <OrbitControls enabled={!isNavLocked} />
+        <OrbitControls
+          enabled={!isNavLocked}
+          minPolarAngle={0}
+          maxPolarAngle={Math.PI / 2 - 0.05}
+          minDistance={20}
+          maxDistance={300}
+          enablePan={true}
+          onChange={(e: any) => {
+            const controls = e?.target;
+            if (!controls) return;
+            const obj = controls.object; // camera
+            const tgt = controls.target;
+            const minY = 0.01;
+            if (obj && obj.position && obj.position.y < minY) {
+              obj.position.y = minY;
+            }
+            if (tgt && tgt.y < 0) {
+              tgt.y = 0;
+            }
+          }}
+        />
       </Canvas>
     </div>
   );
