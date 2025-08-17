@@ -3,54 +3,19 @@ import React, { useMemo, useRef, useState } from 'react';
 import ControlsPanel from './ControlsPanel';
 import TeamOptionsPanel from './TeamOptionsPanel';
 import PlayerEditPanel from './PlayerEditPanel';
-import type { Player, TeamOptions, AnnotationType, DrawingTool } from '../../types';
+import type { DrawingTool } from '../../types';
+import { useNavLock } from '../../state/NavLockContext';
+import { useDrawing } from '../../state/DrawingContext';
+import { useTeamOptions } from '../../state/TeamOptionsContext';
+import { usePlayers } from '../../state/PlayersContext';
 
-interface ControlPanelProps {
-  players: Player[];
-  selectedPlayerId: string | null;
-  teamAOptions: TeamOptions;
-  teamBOptions: TeamOptions;
-  isNavLocked: boolean;
-  onPlayerUpdate: (id: string, updates: Partial<Player>) => void;
-  onTeamOptionChange: (team: 'A' | 'B', updates: Partial<TeamOptions>) => void;
-  onTogglePlayerSelection: (team: 'A' | 'B', feature: 'passingNet' | 'coveredArea', playerId: string) => void;
-  onSetNavLock: (isLocked: boolean) => void;
-  // drawing
-  activeTool: DrawingTool | null;
-  setActiveTool: (tool: DrawingTool | null) => void;
-  drawColor: string;
-  setDrawColor: (c: string) => void;
-  drawLineWidth: number;
-  setDrawLineWidth: (w: number) => void;
-  drawFilled: boolean;
-  setDrawFilled: (f: boolean) => void;
-  drawStrokeStyle: 'solid' | 'dashed' | 'dotted';
-  setDrawStrokeStyle: (s: 'solid'|'dashed'|'dotted') => void;
-  clearAnnotations: () => void;
-}
+interface ControlPanelProps {}
 
-const ControlPanel: React.FC<ControlPanelProps> = ({
-  players,
-  selectedPlayerId,
-  teamAOptions,
-  teamBOptions,
-  isNavLocked,
-  onPlayerUpdate,
-  onTeamOptionChange,
-  onTogglePlayerSelection,
-  onSetNavLock,
-  activeTool,
-  setActiveTool,
-  drawColor,
-  setDrawColor,
-  drawLineWidth,
-  setDrawLineWidth,
-  drawFilled,
-  setDrawFilled,
-  drawStrokeStyle,
-  setDrawStrokeStyle,
-  clearAnnotations,
-}) => {
+const ControlPanel: React.FC<ControlPanelProps> = () => {
+  const { isNavLocked, setNavLock } = useNavLock();
+  const { activeTool, setActiveTool, drawColor, setDrawColor, drawLineWidth, setDrawLineWidth, drawFilled, setDrawFilled, drawStrokeStyle, setDrawStrokeStyle, clearAnnotations } = useDrawing();
+  const { teamAOptions, teamBOptions, setTeamOptionChange, togglePlayerSelection } = useTeamOptions();
+  const { players, selectedPlayerId, updatePlayer } = usePlayers();
   const selectedPlayer = useMemo(() =>
     players.find(p => p.id === selectedPlayerId),
     [players, selectedPlayerId]
@@ -86,12 +51,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     if (!selectedPlayer) return;
     const { name, value } = e.target;
     const updateValue = name === 'number' ? parseInt(value, 10) || 0 : value;
-    onPlayerUpdate(selectedPlayer.id, { [name]: updateValue });
+    updatePlayer(selectedPlayer.id, { [name]: updateValue } as any);
   };
 
   const handleTeamChange = (team: 'A' | 'B', e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
-    onTeamOptionChange(team, { [name]: type === 'checkbox' ? checked : value });
+    setTeamOptionChange(team, { [name]: type === 'checkbox' ? checked : value } as any);
   };
 
   return (
@@ -104,30 +69,30 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           <div className="absolute pb-2" style={{ left: popoverLeft, bottom: 'calc(100% + 8px)' }}>
             <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-xl w-auto max-w-[560px] inline-block align-bottom">
               {activePanel === 'controls' && (
-                <ControlsPanel isNavLocked={isNavLocked} onSetNavLock={onSetNavLock} />
+                <ControlsPanel isNavLocked={isNavLocked} onSetNavLock={setNavLock} />
               )}
-              {activePanel === 'teamA' && (
+        {activePanel === 'teamA' && (
                 <TeamOptionsPanel
                   title="Team A"
                   team="A"
                   options={teamAOptions}
                   players={teamAPlayers}
-                  onTeamOptionChange={onTeamOptionChange}
-                  onTogglePlayerSelection={onTogglePlayerSelection}
+          onTeamOptionChange={setTeamOptionChange}
+          onTogglePlayerSelection={togglePlayerSelection}
                 />
               )}
-              {activePanel === 'teamB' && (
+        {activePanel === 'teamB' && (
                 <TeamOptionsPanel
                   title="Team B"
                   team="B"
                   options={teamBOptions}
                   players={teamBPlayers}
-                  onTeamOptionChange={onTeamOptionChange}
-                  onTogglePlayerSelection={onTogglePlayerSelection}
+          onTeamOptionChange={setTeamOptionChange}
+          onTogglePlayerSelection={togglePlayerSelection}
                 />
               )}
               {activePanel === 'player' && (
-                <PlayerEditPanel selectedPlayer={selectedPlayer} onPlayerUpdate={onPlayerUpdate} />
+                <PlayerEditPanel selectedPlayer={selectedPlayer} onPlayerUpdate={updatePlayer} />
               )}
               {activePanel === 'draw' && (
                 <div>

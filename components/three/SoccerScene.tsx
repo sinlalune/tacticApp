@@ -2,55 +2,24 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Line, Html } from '@react-three/drei';
 import { Vector3, Plane, DoubleSide } from 'three';
-import type { Player, TeamOptions, Annotation, AnnotationType, DrawingTool } from '../../types';
+import type { Annotation } from '../../types';
 import Field from './Field.tsx';
 import Player3D from './Player3D.tsx';
 import PassingNet from './PassingNet.tsx';
 import CoveredArea from './CoveredArea.tsx';
+import { useNavLock } from '../../state/NavLockContext';
+import { useDrawing } from '../../state/DrawingContext';
+import { useTeamOptions } from '../../state/TeamOptionsContext';
+import { usePlayers } from '../../state/PlayersContext';
 
 // --- Main Scene ---
-interface SoccerSceneProps {
-  players: Player[];
-  teamAOptions: TeamOptions;
-  teamBOptions: TeamOptions;
-  selectedPlayerId: string | null;
-  isNavLocked: boolean;
-  onSelectPlayer: (playerId: string | null) => void;
-  onPlayerPositionUpdate: (playerId: string, newPosition: Vector3) => void;
-  onSetNavLock: (locked: boolean) => void;
-  // drawing
-  annotations: Annotation[];
-  activeTool: DrawingTool | null;
-  drawColor: string;
-  drawLineWidth: number;
-  drawFilled: boolean;
-  drawStrokeStyle?: 'solid' | 'dashed' | 'dotted';
-  addAnnotation: (ann: Annotation) => void;
-  updateAnnotation: (id: string, patch: Partial<Annotation>) => void;
-  removeAnnotation: (id: string) => void;
-  setActiveTool?: (tool: DrawingTool | null) => void;
-}
+interface SoccerSceneProps {}
 
-const SoccerSceneContent: React.FC<SoccerSceneProps> = ({ 
-  players, 
-  teamAOptions, 
-  teamBOptions, 
-  selectedPlayerId, 
-  isNavLocked, 
-  onSelectPlayer, 
-  onPlayerPositionUpdate,
-  onSetNavLock,
-  annotations,
-  activeTool,
-  drawColor,
-  drawLineWidth,
-  drawFilled,
-  drawStrokeStyle,
-  addAnnotation,
-  updateAnnotation,
-  removeAnnotation,
-  setActiveTool,
-}) => {
+const SoccerSceneContent: React.FC<SoccerSceneProps> = () => {
+  const { isNavLocked, setNavLock } = useNavLock();
+  const { annotations, activeTool, drawColor, drawLineWidth, drawFilled, drawStrokeStyle, addAnnotation, updateAnnotation, removeAnnotation, setActiveTool } = useDrawing();
+  const { teamAOptions, teamBOptions } = useTeamOptions();
+  const { players, selectedPlayerId, setSelectedPlayerId, updatePlayerPosition } = usePlayers();
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [drawingId, setDrawingId] = useState<string | null>(null);
   const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
@@ -73,26 +42,26 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
   const didLockForPlayerDragRef = useRef<boolean>(false);
   const beginDrawNavLock = useCallback(() => {
     if (!didLockForDrawRef.current) {
-      prevNavLockBeforeDrawRef.current = isNavLocked;
-      if (!isNavLocked) onSetNavLock(true);
+    prevNavLockBeforeDrawRef.current = isNavLocked;
+    if (!isNavLocked) setNavLock(true);
       didLockForDrawRef.current = true;
     }
-  }, [isNavLocked, onSetNavLock]);
+  }, [isNavLocked, setNavLock]);
   const endDrawNavLock = useCallback(() => {
     if (didLockForDrawRef.current) {
-      if (!prevNavLockBeforeDrawRef.current) onSetNavLock(false);
+    if (!prevNavLockBeforeDrawRef.current) setNavLock(false);
       didLockForDrawRef.current = false;
     }
-  }, [onSetNavLock]);
+  }, [setNavLock]);
 
   // Helper: exit selection/edit mode and restore nav lock if we enabled it
   const clearSelection = useCallback(() => {
     if (isSelecting) {
       setIsSelecting(false);
       setSelectedAnnId(null);
-      if (!prevNavLockRef.current) onSetNavLock(false);
+    if (!prevNavLockRef.current) setNavLock(false);
     }
-  }, [isSelecting, onSetNavLock]);
+  }, [isSelecting, setNavLock]);
   
   const { camera, raycaster, size, pointer, gl } = useThree();
     // Removed wasNavLocked state as it is no longer needed
@@ -195,9 +164,9 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     if (activeDragId) {
       const p = computePlanePointFromClient(ev);
       if (!p) return;
-      onPlayerPositionUpdate(activeDragId, p);
+  updatePlayerPosition(activeDragId, p);
     }
-  }, [isSelecting, selectedAnnId, selectionDragMode, computePlanePointFromClient, annotations, updateAnnotation, DRAG_SENSITIVITY, drawingId, activeDragId, onPlayerPositionUpdate, gl]);
+  }, [isSelecting, selectedAnnId, selectionDragMode, computePlanePointFromClient, annotations, updateAnnotation, DRAG_SENSITIVITY, drawingId, activeDragId, updatePlayerPosition, gl]);
 
   const handleGlobalMouseUp = useCallback((ev: MouseEvent) => {
     // End all drags
@@ -207,13 +176,13 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     resizeCornerRef.current = null;
     endDrawNavLock();
     if (didLockForPlayerDragRef.current) {
-      if (!prevNavLockBeforePlayerDragRef.current) onSetNavLock(false);
+  if (!prevNavLockBeforePlayerDragRef.current) setNavLock(false);
       didLockForPlayerDragRef.current = false;
     }
     globalDragAttachedRef.current = false;
     window.removeEventListener('mousemove', handleGlobalMouseMove as any);
     window.removeEventListener('mouseup', handleGlobalMouseUp as any);
-  }, [endDrawNavLock, handleGlobalMouseMove, onSetNavLock]);
+  }, [endDrawNavLock, handleGlobalMouseMove, setNavLock]);
 
   const attachGlobalDrag = useCallback(() => {
     if (globalDragAttachedRef.current) return;
@@ -266,11 +235,11 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     if (activeTool) return;
     if (event.button !== 0) return; // only left-click starts player drag
     setActiveDragId(playerId);
-    onSelectPlayer(playerId);
+  setSelectedPlayerId(playerId);
     // Lock nav for the duration of the player drag
     if (!didLockForPlayerDragRef.current) {
       prevNavLockBeforePlayerDragRef.current = isNavLocked;
-      if (!isNavLocked) onSetNavLock(true);
+  if (!isNavLocked) setNavLock(true);
       didLockForPlayerDragRef.current = true;
     }
   attachGlobalDrag();
@@ -287,7 +256,7 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
   endDrawNavLock();
     // Restore nav lock after player drag if we locked it
     if (didLockForPlayerDragRef.current) {
-      if (!prevNavLockBeforePlayerDragRef.current) onSetNavLock(false);
+      if (!prevNavLockBeforePlayerDragRef.current) setNavLock(false);
       didLockForPlayerDragRef.current = false;
     }
   };
@@ -401,7 +370,7 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
     if (activeDragId) {
       raycaster.setFromCamera(pointer, camera);
       if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
-        onPlayerPositionUpdate(activeDragId, intersection.clone());
+  updatePlayerPosition(activeDragId, intersection.clone());
       }
     }
   };
@@ -598,12 +567,12 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
         setIsSelecting(true);
         setSelectedAnnId(ann.id);
         prevNavLockRef.current = isNavLocked;
-        if (!isNavLocked) onSetNavLock(true);
+  if (!isNavLocked) setNavLock(true);
       } else {
         // Exit selection mode and restore nav lock
         setIsSelecting(false);
         setSelectedAnnId(null);
-        if (!prevNavLockRef.current) onSetNavLock(false);
+  if (!prevNavLockRef.current) setNavLock(false);
       }
       return;
     }
@@ -632,7 +601,7 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
       <directionalLight position={[50, 50, 50]} intensity={2.5} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
       
       {/* Scene Components */}
-  <Field onPointerMissed={(e?: any) => { onSelectPlayer(null); }} onPointerDown={onFieldPointerDown} onPointerMove={onFieldPointerMove} onPointerUp={onFieldPointerUp} />
+  <Field onPointerMissed={(e?: any) => { setSelectedPlayerId(null); }} onPointerDown={onFieldPointerDown} onPointerMove={onFieldPointerMove} onPointerUp={onFieldPointerUp} />
       
     {teamAPlayers.map(player => (
         <Player3D 
@@ -873,13 +842,14 @@ const SoccerSceneContent: React.FC<SoccerSceneProps> = ({
 };
 
 // --- Canvas Wrapper ---
-export const SoccerScene: React.FC<SoccerSceneProps> = (props) => {
+export const SoccerScene: React.FC<SoccerSceneProps> = () => {
+  const { isNavLocked } = useNavLock();
   return (
     <div className="scene-container" style={{ position: 'relative', width: '100%', height: '100%', zIndex: 1 }} onContextMenu={(e) => e.preventDefault()}>
       <Canvas shadows camera={{ position: [0, 80, 100], fov: 50 }}>
         <color attach="background" args={['#111827']} />
-        <SoccerSceneContent {...props} />
-        <OrbitControls enabled={!props.isNavLocked} />
+  <SoccerSceneContent />
+        <OrbitControls enabled={!isNavLocked} />
       </Canvas>
     </div>
   );
